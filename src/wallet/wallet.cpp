@@ -1835,12 +1835,20 @@ int64_t CWallet::RescanFromTime(int64_t startTime, const WalletRescanReserver& r
     WalletLogPrintf("%s: Rescanning last %i blocks\n", __func__, start ? WITH_LOCK(cs_wallet, return GetLastBlockHeight()) - start_height + 1 : 0);
 
     if (start) {
-        // TODO: this should take into account failure by ScanResult::USER_ABORT
         ScanResult result = ScanForWalletTransactions(start_block, start_height, /*max_height=*/{}, reserver, /*save_progress=*/false);
         if (result.status == ScanResult::FAILURE) {
             int64_t time_max;
             CHECK_NONFATAL(chain().findBlock(result.last_failed_block, FoundBlock().maxTime(time_max)));
             return time_max + TIMESTAMP_WINDOW + 1;
+        } else if (result.status == ScanResult::USER_ABORT) {
+            // If the user aborted the rescan, resume from the last successfully
+            // scanned block next time rather than restarting from the beginning.
+            if (!result.last_scanned_block.IsNull()) {
+                int64_t time_max;
+                if (chain().findBlock(result.last_scanned_block, FoundBlock().maxTime(time_max))) {
+                    return time_max + TIMESTAMP_WINDOW + 1;
+                }
+            }
         }
     }
     return startTime;
